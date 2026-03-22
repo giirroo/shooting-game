@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>👋 Hand Shooter</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden;
+    }
+    #container { position: relative; width: 960px; height: 540px; }
+    #gameCanvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      border-radius: 12px; box-shadow: 0 0 40px rgba(0,200,255,0.25);
+    }
+    .overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,10,0.88);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #fff; border-radius: 12px; z-index: 10;
+    }
+    #startScreen h1 {
+      font-size: 3em; font-weight: 900; color: #00cfff;
+      text-shadow: 0 0 20px #00cfff; margin-bottom: 8px;
+    }
+    .subtitle { font-size: 1.1em; color: #aaa; margin-bottom: 28px; }
+    .how-to {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(0,200,255,0.3);
+      border-radius: 12px; padding: 22px 34px; margin-bottom: 28px;
+      text-align: left; max-width: 480px;
+    }
+    .how-to h3 { color: #00cfff; margin-bottom: 12px; font-size: 1em; letter-spacing: 1px; }
+    .gesture { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; font-size: 0.95em; color: #ddd; }
+    .icon { font-size: 2em; width: 48px; text-align: center; }
+    .desc strong { color: #fff; }
+    .btn {
+      border: none; color: #fff; font-size: 1.1em; font-weight: 700;
+      padding: 13px 44px; border-radius: 50px; cursor: pointer; letter-spacing: 1px;
+      transition: transform 0.1s;
+    }
+    .btn:hover { transform: scale(1.05); }
+    #startBtn { background: linear-gradient(135deg,#00cfff,#0066ff); box-shadow: 0 0 20px rgba(0,150,255,.5); font-size:1.2em; }
+    #restartBtn { background: linear-gradient(135deg,#ff4466,#cc0033); box-shadow: 0 0 20px rgba(255,50,80,.5); }
+    #gameOverScreen { display: none; }
+    #gameOverScreen h2 { font-size: 3em; color: #ff4466; text-shadow: 0 0 20px #ff4466; margin-bottom: 10px; }
+    #finalScore { font-size: 1.5em; color: #ffcc00; margin-bottom: 8px; }
+    #finalKills { font-size: 1.2em; color: #fff; margin-bottom: 30px; }
+    #instructions {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.4); font-size: 0.8em; text-align: center;
+      z-index: 5; pointer-events: none;
+    }
+    /* DOM 크로스헤어 — 캔버스와 완전히 독립 */
+    #cursor {
+      display: none; position: absolute; pointer-events: none;
+      z-index: 30; transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+<div id="container">
+  <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+  <div id="startScreen" class="overlay">
+    <h1>🔫 HAND SHOOTER</h1>
+    <p class="subtitle">20초 안에 지나가는 사람을 최대한 많이 맞춰보세요!</p>
+    <div class="how-to">
+      <h3>🎮 조작 방법</h3>
+      <div class="gesture">
+        <span class="icon">✌️</span>
+        <div class="desc"><strong>두 손가락으로 겨냥</strong><br>검지+중지를 펴서 과녁을 향해 조준합니다</div>
+      </div>
+      <div class="gesture">
+        <span class="icon">🔫</span>
+        <div class="desc"><strong>위로 튕기면 발사!</strong><br>손가락을 빠르게 위로 올리면 조준점에서 즉시 발사!</div>
+      </div>
+      <div class="gesture">
+        <span class="icon">⏱️</span>
+        <div class="desc"><strong>20초 제한</strong><br>시간이 다 되기 전에 최대한 많이 맞춰 기록을 세우세요!</div>
+      </div>
+    </div>
+    <button id="startBtn" class="btn">🎮 게임 시작</button>
+  </div>
+
+  <div id="gameOverScreen" class="overlay" style="background:transparent; justify-content:flex-end; padding-bottom:60px;">
+    <button id="restartBtn" class="btn">🔄 다시 시작</button>
+  </div>
+
+  <div id="instructions">웹캠 권한을 허용해주세요</div>
+
+  <!-- DOM 크로스헤어 SVG -->
+  <div id="cursor">
+    <svg id="cursorSvg" width="52" height="52" viewBox="-26 -26 52 52">
+      <circle id="cCircle" cx="0" cy="0" r="20" fill="none" stroke="#00ffcc" stroke-width="2.5"/>
+      <line x1="-34" y1="0" x2="-25" y2="0" stroke="#00ffcc" stroke-width="2.5"/>
+      <line x1="25"  y1="0" x2="34"  y2="0" stroke="#00ffcc" stroke-width="2.5"/>
+      <line x1="0" y1="-34" x2="0" y2="-25" stroke="#00ffcc" stroke-width="2.5"/>
+      <line x1="0" y1="25"  x2="0" y2="34"  stroke="#00ffcc" stroke-width="2.5"/>
+      <circle cx="0" cy="0" r="3" fill="#00ffcc"/>
+    </svg>
+  </div>
+</div>
+
+<video id="webcam" autoplay muted playsinline style="display:none;"></video>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js" crossorigin="anonymous"></script>
+<script>
+// ── 캔버스 ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const video  = document.getElementById('webcam');
+const W = canvas.width, H = canvas.height;
+
+// ── DOM 크로스헤어 ────────────────────────────────────────────────────
+const cursorEl  = document.getElementById('cursor');
+const cCircle   = document.getElementById('cCircle');
+const cSvgEls   = document.querySelectorAll('#cursorSvg line, #cursorSvg circle');
+
+function setCursor(nx, ny, firing) {
+  cursorEl.style.display = 'block';
+  cursorEl.style.left = (nx * W) + 'px';
+  cursorEl.style.top  = (ny * H) + 'px';
+  const col = firing ? '#ff3355' : '#00ffcc';
+  cCircle.setAttribute('r', firing ? 12 : 20);
+  cSvgEls.forEach(el => {
+    el.setAttribute('stroke', col);
+    if (el.tagName === 'circle') el.setAttribute('fill', col);
+  });
+  cursorEl.style.filter = `drop-shadow(0 0 ${firing ? 10 : 6}px ${col})`;
+}
+
+// ── 이미지 ────────────────────────────────────────────────────────────
+const bgImage = new Image(); bgImage.src = 'back.png';
+const charImgs = [];
+for (let i = 1; i <= 8; i++) { const img = new Image(); img.src = `character_${i}.png`; charImgs.push(img); }
+
+// 각 캐릭터의 기본 바라보는 방향 (앞발 기준: 왼발=오른쪽으로걸음=false, 오른발=왼쪽으로걸음=true)
+// char1(줄무늬소년):false  char2(정장남):false  char3(후드남):false  char4(정장녀):true
+// char5(체크소년):true     char6(코트여):false   char7(데님남):false  char8(캐주얼녀):true
+const charFacesLeft = [false, false, false, true, true, false, false, true];
+
+// 반복 방지: 최근 등장한 캐릭터 인덱스 기록
+const recentChars = [];
+
+// ── 게임 설정 ─────────────────────────────────────────────────────────
+const GAME_DURATION = 20; // 초
+
+// ── 게임 상태 ─────────────────────────────────────────────────────────
+let gameState = 'start';
+let score = 0, killCount = 0, level = 1;
+let timeLeft = GAME_DURATION;
+let gameStartTime = 0;
+let characters = [], particles = [], scorePopups = [], muzzleFlashes = [], shockRings = [];
+let frameCount = 0, spawnInterval = 55;
+
+// ── 손 추적 상태 ───────────────────────────────────────────────────────
+let cursorPos    = null;
+let prevFingerY  = null;
+let justFired    = false;
+let shotCooldown = 0;
+
+// ── 캐릭터 ────────────────────────────────────────────────────────────
+class Character {
+  constructor() {
+    let idx, tries = 0;
+    do {
+      idx = Math.floor(Math.random() * 8);
+      tries++;
+    } while (recentChars.includes(idx) && tries < 20);
+    recentChars.push(idx);
+    if (recentChars.length > 3) recentChars.shift();
+    this.imgIndex = idx;
+    this.img = charImgs[this.imgIndex];
+    // 원본 비율 유지, 캔버스 높이의 38%로 고정 (랜덤 변동 없음)
+    const ratio = (this.img.naturalWidth || 559) / (this.img.naturalHeight || 1137);
+    this.h = Math.round(H * 0.38);
+    this.w = Math.round(this.h * ratio);
+    // 캐릭터 3(idx2), 5(idx4), 8(idx7)은 왼쪽에서, 나머지는 오른쪽에서 등장
+    const leftSideChars = [2, 4, 7];
+    this.side = leftSideChars.includes(this.imgIndex) ? 'left' : 'right';
+    this.x     = this.side === 'left' ? -this.w : W + this.w;
+    this.baseY = H - 8;
+    this.y     = this.baseY;
+    const spd  = 1.4 + Math.random() * 0.8 + level * 0.25;
+    this.speed = spd * (this.side === 'left' ? 1 : -1);
+    this.status   = 'walking';
+    this.hitTimer = 0;
+    this.dieTimer = 0;
+    this.alpha  = 1; this.scaleX = 1; this.scaleY = 1;
+    this.bobPhase = Math.random() * Math.PI * 2;
+    this.bobY = 0; this.shakeX = 0; this.starAngle = 0;
+  }
+
+  update() {
+    if (this.status === 'walking') {
+      this.x += this.speed;
+      this.bobPhase += 0.18;
+      this.bobY = Math.sin(this.bobPhase) * 2.5;
+    } else if (this.status === 'hit') {
+      this.hitTimer--;
+      this.shakeX = (Math.random() - 0.5) * 22 * (this.hitTimer / 70);
+      this.bobY = -Math.sin((1 - this.hitTimer / 70) * Math.PI) * 40;
+      this.starAngle += 0.18;
+      if (this.hitTimer <= 0) { this.status = 'dying'; this.dieTimer = 40; }
+    } else if (this.status === 'dying') {
+      this.dieTimer--;
+      const t = this.dieTimer / 35;
+      this.alpha = t; this.scaleX = 1 + (1-t)*0.4; this.scaleY = 1 - (1-t)*0.6;
+    }
+  }
+
+  getHit() {
+    if (this.status !== 'walking') return false;
+    this.status = 'hit'; this.hitTimer = 70; this.speed = 0;
+    return true;
+  }
+
+  isGone() {
+    if (this.status === 'dying' && this.dieTimer <= 0) return true;
+    if (this.status === 'walking') {
+      return this.side === 'left' ? this.x > W + this.w : this.x < -this.w;
+    }
+    return false;
+  }
+
+  getBounds() {
+    return {
+      left:   this.x - this.w * 0.42,
+      right:  this.x + this.w * 0.42,
+      top:    this.y + this.bobY - this.h,
+      bottom: this.y + this.bobY,
+    };
+  }
+
+  draw() {
+    if (!this.img.complete || this.img.naturalWidth === 0) return;
+
+    const cx = this.x + this.shakeX;
+    const cy = this.y + this.bobY;
+    const sw = this.w * this.scaleX;
+    const sh = this.h * this.scaleY;
+
+    const facesLeft  = charFacesLeft[this.imgIndex];
+    const movingLeft = this.side === 'right';
+    const needsFlip  = facesLeft !== movingLeft;
+
+    ctx.globalAlpha = this.alpha;
+    if (needsFlip) {
+      ctx.drawImage(this.img, cx + sw/2, cy - sh, -sw, sh);
+    } else {
+      ctx.drawImage(this.img, cx - sw/2, cy - sh,  sw, sh);
+    }
+
+    if (this.status === 'hit') {
+      const prog = 1 - this.hitTimer / 70;
+
+      // ── 말풍선
+      const bs = 0.5 + prog * 0.9;
+      const bx = cx;
+      const by = cy - sh - 18 - prog * 20;
+      const br = 30 * bs;
+
+      ctx.globalAlpha = this.alpha;
+      ctx.shadowBlur = 20; ctx.shadowColor = '#ff2244';
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      // 꼬리
+      ctx.beginPath();
+      ctx.moveTo(bx - 9*bs, by + br*0.7);
+      ctx.lineTo(bx,         by + br + 18*bs);
+      ctx.lineTo(bx + 9*bs,  by + br*0.7);
+      ctx.fill();
+      // 텍스트
+      ctx.fillStyle = '#ff2244';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `bold ${Math.round(26 * bs)}px sans-serif`;
+      ctx.shadowBlur = 6; ctx.shadowColor = '#ff8800';
+      ctx.fillText('!!', bx, by);
+      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+      // ── 캐릭터 빨간 틴트 (피격 직후)
+      if (this.hitTimer > 55) {
+        ctx.globalAlpha = this.alpha * ((this.hitTimer - 55) / 15) * 0.45;
+        ctx.fillStyle = '#ff3333';
+        if (needsFlip) {
+          ctx.fillRect(cx - sw/2, cy - sh, sw, sh);
+        } else {
+          ctx.fillRect(cx - sw/2, cy - sh, sw, sh);
+        }
+      }
+
+      // ── 별 (8개, 더 빠르게 회전, 더 넓은 궤도)
+      for (let i = 0; i < 8; i++) {
+        const a = this.starAngle + i * (Math.PI * 2 / 8);
+        const r = 40 + prog * 20;
+        const sx = cx + Math.cos(a) * r;
+        const sy = (cy - sh * 0.5) + Math.sin(a) * r * 0.5;
+        ctx.globalAlpha = this.alpha * (0.5 + 0.5 * Math.abs(Math.sin(a + this.starAngle)));
+        ctx.fillStyle = i % 2 ? '#ffcc00' : '#ff4488';
+        ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = '10px sans-serif';
+  }
+}
+
+// ── 파티클 ────────────────────────────────────────────────────────────
+class Particle {
+  constructor(x, y, col) {
+    const a = Math.random()*Math.PI*2, s = 1.5 + Math.random()*4;
+    this.x=x; this.y=y; this.vx=Math.cos(a)*s; this.vy=Math.sin(a)*s-2;
+    this.life=35+Math.random()*20; this.maxLife=this.life;
+    this.r=2+Math.random()*3; this.col=col;
+  }
+  update() { this.x+=this.vx; this.y+=this.vy; this.vy+=0.12; this.life--; }
+  draw() {
+    const al = this.life/this.maxLife;
+    ctx.save(); ctx.globalAlpha=al;
+    ctx.beginPath(); ctx.arc(this.x,this.y,this.r*al,0,Math.PI*2);
+    ctx.fillStyle=this.col; ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── 충격파 링 ─────────────────────────────────────────────────────────
+class ShockRing {
+  constructor(x, y, col='#ffcc00') {
+    this.x=x; this.y=y; this.r=8; this.life=22; this.maxLife=22; this.col=col;
+  }
+  update() { this.r += 7; this.life--; }
+  draw() {
+    const al = (this.life / this.maxLife) * 0.85;
+    ctx.save();
+    ctx.globalAlpha = al;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+    ctx.strokeStyle = this.col;
+    ctx.lineWidth = 4 * (this.life / this.maxLife) + 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function spawnHitParticles(x, y) {
+  // 파티클 더 많이
+  ['#ff4466','#ffcc00','#ff8800','#fff','#ff88cc'].forEach(c => {
+    for (let i=0;i<9;i++) particles.push(new Particle(x,y,c));
+  });
+  // 충격파 링 2개 (크기·색상 다름)
+  shockRings.push(new ShockRing(x, y, '#ffcc00'));
+  shockRings.push(new ShockRing(x, y, '#ff4466'));
+  shockRings[shockRings.length-1].r = 20; // 두 번째 링은 약간 크게 시작
+}
+
+// ── 머즐 플래시 ───────────────────────────────────────────────────────
+class MuzzleFlash {
+  constructor(x,y){ this.x=x; this.y=y; this.life=8; }
+  update(){ this.life--; }
+  draw(){
+    const al = this.life/8;
+    ctx.save();
+    ctx.globalAlpha = al;
+    ctx.beginPath(); ctx.arc(this.x,this.y,22*al+10,0,Math.PI*2);
+    ctx.strokeStyle='#ffee44'; ctx.lineWidth=3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(this.x,this.y,10,0,Math.PI*2);
+    ctx.fillStyle='#fff'; ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── 점수 팝업 ─────────────────────────────────────────────────────────
+function addPopup(x,y,text,color='#ffcc00'){
+  scorePopups.push({x,y,text,color,life:70,vy:-1});
+}
+
+// ── 오디오 ────────────────────────────────────────────────────────────
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playShot() {
+  try {
+    ensureAudio();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(700, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime+0.12);
+    g.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.12);
+    o.start(); o.stop(audioCtx.currentTime+0.12);
+  } catch(e){}
+}
+function playHit() {
+  try {
+    ensureAudio();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type='sine';
+    o.frequency.setValueAtTime(400, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime+0.08);
+    o.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime+0.25);
+    g.gain.setValueAtTime(0.28, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.3);
+    o.start(); o.stop(audioCtx.currentTime+0.3);
+  } catch(e){}
+}
+
+// ── HUD ──────────────────────────────────────────────────────────────
+function drawHUD() {
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // HUD 배경
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(10, 10, W-20, 56);
+
+  // 점수 (왼쪽)
+  ctx.font = 'bold 22px Segoe UI';
+  ctx.fillStyle = '#ffcc00'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`⭐ ${score}`, 24, 38);
+  ctx.font = '14px Segoe UI';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`명중 ${killCount}명`, 24, 57);
+
+  // 타이머 (가운데)
+  const tRemain = Math.max(0, timeLeft);
+  const urgent = tRemain <= 5;
+  ctx.font = `bold 28px Segoe UI`;
+  ctx.fillStyle = urgent ? '#ff4444' : '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  if (urgent && Math.floor(Date.now() / 300) % 2 === 0) {
+    ctx.shadowBlur = 16; ctx.shadowColor = '#ff0000';
+  }
+  ctx.fillText(`⏱ ${tRemain.toFixed(1)}`, W/2, 42);
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // 타이머 바
+  const barW = 200, barH = 8;
+  const barX = W/2 - barW/2;
+  const barY = 50;
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillRect(barX, barY, barW, barH);
+  const ratio = Math.max(0, tRemain / GAME_DURATION);
+  const barColor = ratio > 0.4 ? '#00cfff' : ratio > 0.2 ? '#ffcc00' : '#ff4444';
+  ctx.fillStyle = barColor;
+  ctx.fillRect(barX, barY, barW * ratio, barH);
+
+  // 레벨 (오른쪽)
+  ctx.font = 'bold 18px Segoe UI';
+  ctx.fillStyle = '#00cfff'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`LEVEL ${level}`, W-24, 38);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+// ── 발사 처리 ─────────────────────────────────────────────────────────
+function fireShot(pos) {
+  const p = pos || cursorPos;
+  if (!p) return;
+  const cx = p.x * W;
+  const cy = p.y * H;
+
+  playShot();
+  muzzleFlashes.push(new MuzzleFlash(cx, cy));
+  setCursor(p.x, p.y, true);
+
+  for (let j = characters.length-1; j >= 0; j--) {
+    const ch = characters[j];
+    if (ch.status !== 'walking') continue;
+    const bd = ch.getBounds();
+    if (cx > bd.left && cx < bd.right && cy > bd.top && cy < bd.bottom) {
+      ch.getHit();
+      playHit();
+      spawnHitParticles(cx, cy);
+      score += 100 * level;
+      killCount++;
+      addPopup(ch.x, ch.y + ch.bobY - ch.h - 50, `+${100*level}`);
+      if (killCount % 5 === 0) {
+        level++;
+        spawnInterval = Math.max(45, 80 - level*5);
+        addPopup(W/2, H/2-30, `🔥 LEVEL ${level}!`, '#00cfff');
+      }
+      break;
+    }
+  }
+}
+
+// ── 게임오버 캔버스 렌더 ─────────────────────────────────────────────
+function drawGameOverCanvas() {
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // 배경
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0,0,W,H);
+  if (bgImage.complete && bgImage.naturalWidth > 0) ctx.drawImage(bgImage,0,0,W,H);
+
+  // 어두운 오버레이
+  ctx.fillStyle = 'rgba(0,0,10,0.78)';
+  ctx.fillRect(0, 0, W, H);
+
+  // TIME'S UP
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowBlur = 30; ctx.shadowColor = '#ff4466';
+  ctx.font = 'bold 72px Segoe UI';
+  ctx.fillStyle = '#ff4466';
+  ctx.fillText("⏱ TIME'S UP!", W/2, H/2 - 90);
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // 점수
+  ctx.font = 'bold 42px Segoe UI';
+  ctx.fillStyle = '#ffcc00';
+  ctx.shadowBlur = 14; ctx.shadowColor = '#ffcc00';
+  ctx.fillText(`⭐ ${score.toLocaleString()}점`, W/2, H/2 - 10);
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+  // 명중 / 레벨
+  ctx.font = '28px Segoe UI';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`명중 ${killCount}명  |  LEVEL ${level}`, W/2, H/2 + 50);
+
+  // 안내
+  ctx.font = '20px Segoe UI';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('아래 버튼을 눌러 다시 시작하세요', W/2, H/2 + 105);
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+// ── 게임 루프 ─────────────────────────────────────────────────────────
+function gameLoop() {
+  requestAnimationFrame(gameLoop);
+
+  if (cursorPos) {
+    setCursor(cursorPos.x, cursorPos.y, justFired && shotCooldown > 15);
+  }
+  if (justFired && shotCooldown <= 15) justFired = false;
+
+  // 게임오버: 캔버스에 결과 계속 렌더 (DOM 오버레이 + 캔버스 둘 다)
+  if (gameState === 'gameover') {
+    drawGameOverCanvas();
+    return;
+  }
+
+  if (gameState !== 'playing') return;
+
+  frameCount++;
+
+  // 타이머 계산 (실시간)
+  timeLeft = GAME_DURATION - (Date.now() - gameStartTime) / 1000;
+  if (timeLeft <= 0) {
+    timeLeft = 0;
+    endGame();
+    return;
+  }
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.lineWidth = 1; ctx.strokeStyle = '#000';
+
+  if (shotCooldown > 0) shotCooldown--;
+
+  try {
+    // 배경
+    ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0,0,W,H);
+    if (bgImage.complete && bgImage.naturalWidth > 0) ctx.drawImage(bgImage,0,0,W,H);
+
+    // 하단 그림자
+    const sg = ctx.createLinearGradient(0,H-160,0,H);
+    sg.addColorStop(0,'rgba(0,0,0,0)'); sg.addColorStop(1,'rgba(0,0,0,0.28)');
+    ctx.fillStyle=sg; ctx.fillRect(0,H-160,W,160);
+
+    // 캐릭터 스폰
+    if (frameCount % spawnInterval === 0) {
+      characters.push(new Character());
+      if (Math.random() < 0.15 + level*0.03) characters.push(new Character());
+    }
+
+    // 캐릭터 업데이트/그리기 — 캐릭터 하나의 오류가 전체를 막지 않도록 개별 try/catch
+    for (let i = characters.length-1; i >= 0; i--) {
+      const ch = characters[i];
+      try {
+        ch.update();
+        ch.draw();
+      } catch(e2) {
+        console.warn('[char draw error]', e2);
+      }
+      // 반드시 캔버스 상태 초기화
+      ctx.globalAlpha=1; ctx.setTransform(1,0,0,1,0,0);
+      ctx.shadowBlur=0; ctx.shadowColor='transparent';
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+
+      // NaN/Infinity 좌표인 캐릭터는 강제 제거
+      if (!isFinite(ch.x) || !isFinite(ch.w) || ch.isGone()) {
+        characters.splice(i,1);
+      }
+    }
+
+    // 충격파 링
+    for (let i=shockRings.length-1;i>=0;i--) {
+      try { shockRings[i].update(); shockRings[i].draw(); } catch(e2){}
+      ctx.globalAlpha=1;
+      if (shockRings[i].life<=0) shockRings.splice(i,1);
+    }
+
+    // 파티클
+    for (let i=particles.length-1;i>=0;i--) {
+      try { particles[i].update(); particles[i].draw(); } catch(e2){}
+      ctx.globalAlpha=1;
+      if (particles[i].life<=0) particles.splice(i,1);
+    }
+
+    // 머즐 플래시
+    for (let i=muzzleFlashes.length-1;i>=0;i--) {
+      try { muzzleFlashes[i].update(); muzzleFlashes[i].draw(); } catch(e2){}
+      ctx.globalAlpha=1;
+      if (muzzleFlashes[i].life<=0) muzzleFlashes.splice(i,1);
+    }
+
+    // 점수 팝업
+    for (let i=scorePopups.length-1;i>=0;i--) {
+      const p=scorePopups[i]; p.y+=p.vy; p.life--;
+      ctx.globalAlpha=Math.min(1,p.life/20);
+      ctx.font='bold 26px Segoe UI'; ctx.fillStyle=p.color;
+      ctx.textAlign='center'; ctx.shadowBlur=10; ctx.shadowColor=p.color;
+      ctx.fillText(p.text,p.x,p.y);
+      ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.shadowColor='transparent'; ctx.textAlign='left';
+      if (p.life<=0) scorePopups.splice(i,1);
+    }
+
+  } catch(e) {
+    console.error('[gameLoop error]', e);
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.shadowColor='transparent';
+  }
+
+  // ★ HUD는 반드시 별도 try/catch로 보호 — 위 렌더링 오류와 무관하게 항상 그려짐
+  try {
+    drawHUD();
+  } catch(e) {
+    console.error('[HUD error]', e);
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha=1; ctx.shadowBlur=0; ctx.shadowColor='transparent';
+  }
+}
+
+// ── 게임 제어 ─────────────────────────────────────────────────────────
+function startGame() {
+  gameState='playing';
+  score=0; killCount=0; level=1;
+  timeLeft=GAME_DURATION;
+  gameStartTime=Date.now();
+  frameCount=0; spawnInterval=80;
+  characters=[]; particles=[]; scorePopups=[]; muzzleFlashes=[]; shockRings=[];
+  recentChars.length=0;
+  shotCooldown=0;
+  prevFingerY=null; justFired=false;
+  document.getElementById('startScreen').style.display='none';
+  document.getElementById('gameOverScreen').style.display='none';
+  ensureAudio();
+  if (audioCtx) audioCtx.resume();
+}
+
+function endGame() {
+  gameState = 'gameover';
+  document.getElementById('gameOverScreen').style.display = 'flex';
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// ── 시작 화면 캔버스 ──────────────────────────────────────────────────
+function renderStart() {
+  ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,W,H);
+  if (bgImage.complete && bgImage.naturalWidth>0) ctx.drawImage(bgImage,0,0,W,H);
+}
+bgImage.onload=renderStart; renderStart();
+
+// ── MediaPipe Hands ────────────────────────────────────────────────────
+const hands = new Hands({
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${f}`
+});
+hands.setOptions({ maxNumHands:1, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.5 });
+
+hands.onResults(results => {
+  if (!results.multiHandLandmarks?.length) {
+    prevFingerY = null;
+    return;
+  }
+  const lm = results.multiHandLandmarks[0];
+
+  const tipX = (lm[8].x + lm[12].x) / 2;
+  const tipY = (lm[8].y + lm[12].y) / 2;
+  const prevCursorPos = cursorPos;
+  cursorPos = { x: 1 - tipX, y: tipY };
+
+  const currentY = lm[8].y;
+  if (prevFingerY !== null) {
+    const deltaY = currentY - prevFingerY;
+    if (deltaY < -0.038 && gameState === 'playing' && shotCooldown === 0) {
+      fireShot(prevCursorPos || cursorPos);
+      shotCooldown = 22;
+      justFired = true;
+    }
+  }
+  prevFingerY = currentY;
+});
+
+// ── 카메라 ────────────────────────────────────────────────────────────
+const camera = new Camera(video, {
+  onFrame: async () => { await hands.send({ image: video }); },
+  width: 960, height: 540,
+});
+camera.start()
+  .then(()  => { document.getElementById('instructions').textContent = '웹캠 연결됨 — 게임을 시작하세요!'; })
+  .catch(e  => { document.getElementById('instructions').textContent = '⚠️ 웹캠 실패: ' + e.message; });
+
+gameLoop();
+</script>
+</body>
+</html>
