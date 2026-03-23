@@ -592,15 +592,13 @@ function loadLocalScores() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(e) { return []; }
 }
 
-// 현재 리더보드에 하이라이트할 이름
-let _lbHighlight = '';
 // Firebase 실시간 리스너 해제 함수
 let _lbUnsubscribe = null;
 
-function _renderScoreRows(scores, highlightName) {
-  const el = document.getElementById('leaderboard');
+function _renderScoreRows(scores, highlightName, el) {
+  if (!el) el = document.getElementById('leaderboard');
   if (!el) return;
-  if (scores.length === 0) {
+  if (!scores || scores.length === 0) {
     el.innerHTML = '<p class="empty">아직 기록이 없습니다. 첫 번째 도전자가 되어보세요!</p>';
     return;
   }
@@ -608,13 +606,13 @@ function _renderScoreRows(scores, highlightName) {
   let html = `<table>
     <tr><th>순위</th><th>이름</th><th>점수</th><th>명중</th><th>날짜</th></tr>`;
   scores.forEach((s, i) => {
-    const hi = (s.name === highlightName);
+    const hi = s.name === highlightName;
     html += `<tr class="${hi ? 'highlight' : ''}">
       <td>${medals[i] || (i+1)+'위'}</td>
       <td>${s.name}</td>
-      <td>${s.score.toLocaleString()}점</td>
-      <td>${s.kills}명</td>
-      <td>${s.date}</td>
+      <td>${(s.score||0).toLocaleString()}점</td>
+      <td>${s.kills||0}명</td>
+      <td>${s.date||''}</td>
     </tr>`;
   });
   html += '</table>';
@@ -622,34 +620,47 @@ function _renderScoreRows(scores, highlightName) {
 }
 
 async function renderLeaderboard(highlightName = '') {
-  _lbHighlight = highlightName;
   const el = document.getElementById('leaderboard');
   if (!el) return;
 
   // 이전 Firebase 리스너 정리
   if (_lbUnsubscribe) { _lbUnsubscribe(); _lbUnsubscribe = null; }
 
-  if (fbDb) {
-    el.innerHTML = '<p class="empty">순위 불러오는 중...</p>';
-    // orderByChild 없이 limitToLast — 인덱스 불필요, 클라이언트에서 정렬
+  // 로컬 캐시를 즉시 표시 (빠른 초기 렌더)
+  const cached = loadLocalScores().slice(0, 5);
+  if (cached.length > 0) _renderScoreRows(cached, highlightName, el);
+  else el.innerHTML = '<p class="empty">순위 불러오는 중...</p>';
+
+  if (!fbDb) {
+    _renderScoreRows(loadLocalScores().slice(0, 5), highlightName, el);
+    return;
+  }
+
+  // Firebase 실시간 리스너
+  try {
     const ref = fbDb.ref('scores').limitToLast(200);
-    const handler = (snap) => {
-      let scores = [];
-      snap.forEach(child => scores.push(child.val()));
-      scores.sort((a, b) => b.score - a.score);
-      scores = scores.slice(0, 5);
-      // 로컬 캐시 업데이트
-      localStorage.setItem(LS_KEY, JSON.stringify(scores));
-      _renderScoreRows(scores, _lbHighlight);
+    const handler = snap => {
+      try {
+        let scores = [];
+        snap.forEach(child => {
+          const v = child.val();
+          if (v && v.name && typeof v.score === 'number') scores.push(v);
+        });
+        scores.sort((a, b) => b.score - a.score);
+        scores = scores.slice(0, 5);
+        // 로컬 캐시 갱신
+        localStorage.setItem(LS_KEY, JSON.stringify(scores));
+        _renderScoreRows(scores, highlightName, el);
+      } catch(e2) { console.error('리더보드 렌더 오류:', e2); }
     };
-    ref.on('value', handler, (err) => {
-      console.warn('Firebase 실시간 오류, 로컬 폴백:', err);
-      _renderScoreRows(loadLocalScores().slice(0, 5), _lbHighlight);
+    ref.on('value', handler, err => {
+      console.warn('Firebase read 실패, 로컬 폴백:', err);
+      _renderScoreRows(loadLocalScores().slice(0, 5), highlightName, el);
     });
-    // 컴포넌트 해제용 함수 저장
-    _lbUnsubscribe = () => ref.off('value', handler);
-  } else {
-    _renderScoreRows(loadLocalScores().slice(0, 5), highlightName);
+    _lbUnsubscribe = () => { try { ref.off('value', handler); } catch(e){} };
+  } catch(e) {
+    console.error('Firebase 리스너 설정 실패:', e);
+    _renderScoreRows(loadLocalScores().slice(0, 5), highlightName, el);
   }
 }
 
@@ -801,6 +812,7 @@ function endGame() {
   nameInput.value = '';
   nameInput.disabled = false;
   submitBtn.disabled = false;
+  submitBtn.textContent = '🏆 등록';
   document.getElementById('gameOverScreen').style.display = 'flex';
   renderLeaderboard();
   setTimeout(() => nameInput.focus(), 100);
