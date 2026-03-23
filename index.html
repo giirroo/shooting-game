@@ -44,10 +44,38 @@
     .btn:hover { transform: scale(1.05); }
     #startBtn { background: linear-gradient(135deg,#00cfff,#0066ff); box-shadow: 0 0 20px rgba(0,150,255,.5); font-size:1.2em; }
     #restartBtn { background: linear-gradient(135deg,#ff4466,#cc0033); box-shadow: 0 0 20px rgba(255,50,80,.5); }
-    #gameOverScreen { display: none; }
-    #gameOverScreen h2 { font-size: 3em; color: #ff4466; text-shadow: 0 0 20px #ff4466; margin-bottom: 10px; }
-    #finalScore { font-size: 1.5em; color: #ffcc00; margin-bottom: 8px; }
-    #finalKills { font-size: 1.2em; color: #fff; margin-bottom: 30px; }
+    #gameOverScreen {
+      display: none; background: rgba(0,0,10,0.87);
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 0; padding: 24px 40px;
+    }
+    #gameOverScreen h2 { font-size: 2.4em; color: #ff4466; text-shadow: 0 0 20px #ff4466; margin-bottom: 6px; }
+    .go-score { font-size: 1.9em; color: #ffcc00; font-weight: bold; margin-bottom: 2px; }
+    .go-kills { font-size: 1em; color: #aaa; margin-bottom: 14px; }
+    .go-name-row { display: flex; gap: 10px; margin-bottom: 14px; }
+    #nameInput {
+      padding: 9px 18px; border-radius: 50px;
+      border: 2px solid #00cfff; background: rgba(255,255,255,0.1);
+      color: #fff; font-size: 1em; outline: none; width: 190px;
+    }
+    #nameInput::placeholder { color: #888; }
+    #submitScore {
+      background: linear-gradient(135deg,#ffcc00,#ff8800);
+      color: #111; font-weight: 900; padding: 9px 22px;
+      border-radius: 50px; border: none; cursor: pointer;
+      font-size: 0.95em; transition: transform 0.1s;
+    }
+    #submitScore:hover { transform: scale(1.05); }
+    #submitScore:disabled { opacity: 0.45; cursor: default; transform: none; }
+    #leaderboard { width: 100%; max-width: 520px; margin-bottom: 12px; }
+    #leaderboard table { width: 100%; border-collapse: collapse; }
+    #leaderboard th {
+      color: #00cfff; font-size: 0.8em; padding: 4px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.18); text-align: center;
+    }
+    #leaderboard td { padding: 5px 10px; font-size: 0.88em; color: #ccc; text-align: center; }
+    #leaderboard tr.highlight td { color: #ffcc00; font-weight: bold; }
+    #leaderboard .empty { color: #666; font-size: 0.85em; text-align: center; padding: 10px; }
     #instructions {
       position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
       color: rgba(255,255,255,0.4); font-size: 0.8em; text-align: center;
@@ -85,8 +113,16 @@
     <button id="startBtn" class="btn">🎮 게임 시작</button>
   </div>
 
-  <div id="gameOverScreen" class="overlay" style="background:transparent; justify-content:flex-end; padding-bottom:60px;">
-    <button id="restartBtn" class="btn">🔄 다시 시작</button>
+  <div id="gameOverScreen" class="overlay">
+    <h2>⏱ TIME'S UP!</h2>
+    <div class="go-score" id="goScore">⭐ 0점</div>
+    <div class="go-kills" id="goKills">명중 0명 | LEVEL 1</div>
+    <div class="go-name-row">
+      <input id="nameInput" type="text" placeholder="이름을 입력하세요" maxlength="12" />
+      <button id="submitScore">🏆 등록</button>
+    </div>
+    <div id="leaderboard"></div>
+    <button id="restartBtn" class="btn" style="margin-top:10px;">🔄 다시 시작</button>
   </div>
 
   <div id="instructions">웹캠 권한을 허용해주세요</div>
@@ -105,6 +141,10 @@
 </div>
 
 <video id="webcam" autoplay muted playsinline style="display:none;"></video>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js" crossorigin="anonymous"></script>
@@ -495,46 +535,103 @@ function fireShot(pos) {
   }
 }
 
-// ── 게임오버 캔버스 렌더 ─────────────────────────────────────────────
+// ── 게임오버 캔버스 렌더 (배경만 — 텍스트/UI는 DOM 오버레이가 담당)
 function drawGameOverCanvas() {
   ctx.setTransform(1,0,0,1,0,0);
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
-
-  // 배경
   ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0,0,W,H);
   if (bgImage.complete && bgImage.naturalWidth > 0) ctx.drawImage(bgImage,0,0,W,H);
+}
 
-  // 어두운 오버레이
-  ctx.fillStyle = 'rgba(0,0,10,0.78)';
-  ctx.fillRect(0, 0, W, H);
+// ── Firebase 설정 ────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyD8yhLhDqS_Od39Z7Fkkh1FTxTPpYFdrAQ",
+  authDomain:        "handshooting-c483b.firebaseapp.com",
+  databaseURL:       "https://handshooting-c483b-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "handshooting-c483b",
+  storageBucket:     "handshooting-c483b.firebasestorage.app",
+  messagingSenderId: "701970764294",
+  appId:             "1:701970764294:web:1554d36ae15546d1b06987",
+  measurementId:     "G-RS116TXV34"
+};
 
-  // TIME'S UP
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.shadowBlur = 30; ctx.shadowColor = '#ff4466';
-  ctx.font = 'bold 72px Segoe UI';
-  ctx.fillStyle = '#ff4466';
-  ctx.fillText("⏱ TIME'S UP!", W/2, H/2 - 90);
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+const FB_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+let fbDb = null;
+if (FB_CONFIGURED) {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    fbDb = firebase.database();
+  } catch(e) { console.warn('Firebase 초기화 실패:', e); }
+}
 
-  // 점수
-  ctx.font = 'bold 42px Segoe UI';
-  ctx.fillStyle = '#ffcc00';
-  ctx.shadowBlur = 14; ctx.shadowColor = '#ffcc00';
-  ctx.fillText(`⭐ ${score.toLocaleString()}점`, W/2, H/2 - 10);
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+// ── 리더보드 (Firebase 우선 / localStorage 폴백) ─────────────────────
+const LS_KEY = 'handShooterScores_v1';
+let lastSubmittedName = '';
 
-  // 명중 / 레벨
-  ctx.font = '28px Segoe UI';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(`명중 ${killCount}명  |  LEVEL ${level}`, W/2, H/2 + 50);
+async function saveScore(name, sc, kills, lv) {
+  const entry = {
+    name, score: sc, kills, level: lv,
+    date: new Date().toLocaleDateString('ko-KR'),
+    ts: Date.now()
+  };
+  if (fbDb) {
+    // Firebase에 저장 — 상위 100개 자동 유지
+    await fbDb.ref('scores').push(entry);
+  } else {
+    // 폴백: localStorage
+    const scores = loadLocalScores();
+    scores.push(entry);
+    scores.sort((a, b) => b.score - a.score);
+    scores.splice(10);
+    localStorage.setItem(LS_KEY, JSON.stringify(scores));
+  }
+}
 
-  // 안내
-  ctx.font = '20px Segoe UI';
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText('아래 버튼을 눌러 다시 시작하세요', W/2, H/2 + 105);
+function loadLocalScores() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch(e) { return []; }
+}
 
-  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+async function renderLeaderboard(highlightName = '') {
+  const el = document.getElementById('leaderboard');
+  if (!el) return;
+  el.innerHTML = '<p class="empty">순위 불러오는 중...</p>';
+
+  let scores = [];
+  if (fbDb) {
+    try {
+      const snap = await fbDb.ref('scores')
+        .orderByChild('score').limitToLast(10).once('value');
+      snap.forEach(child => scores.push(child.val()));
+      scores.sort((a, b) => b.score - a.score);
+    } catch(e) {
+      scores = loadLocalScores(); // Firebase 오류 시 로컬 폴백
+    }
+  } else {
+    scores = loadLocalScores();
+  }
+
+  if (scores.length === 0) {
+    el.innerHTML = '<p class="empty">아직 기록이 없습니다. 첫 번째 도전자가 되어보세요!</p>';
+    return;
+  }
+
+  const medals = ['🥇','🥈','🥉'];
+  let html = `<table>
+    <tr><th>순위</th><th>이름</th><th>점수</th><th>명중</th><th>날짜</th></tr>`;
+  scores.forEach((s, i) => {
+    const hi = (s.name === highlightName);
+    html += `<tr class="${hi ? 'highlight' : ''}">
+      <td>${medals[i] || (i+1)+'위'}</td>
+      <td>${s.name}</td>
+      <td>${s.score.toLocaleString()}점</td>
+      <td>${s.kills}명</td>
+      <td>${s.date}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  if (!FB_CONFIGURED) html += '<p class="empty" style="margin-top:6px;">⚠️ Firebase 미설정 — 로컬 저장 중</p>';
+  el.innerHTML = html;
 }
 
 // ── 게임 루프 ─────────────────────────────────────────────────────────
@@ -676,11 +773,43 @@ function startGame() {
 
 function endGame() {
   gameState = 'gameover';
+  document.getElementById('goScore').textContent = `⭐ ${score.toLocaleString()}점`;
+  document.getElementById('goKills').textContent = `명중 ${killCount}명  |  LEVEL ${level}`;
+  const nameInput = document.getElementById('nameInput');
+  const submitBtn = document.getElementById('submitScore');
+  nameInput.value = '';
+  nameInput.disabled = false;
+  submitBtn.disabled = false;
   document.getElementById('gameOverScreen').style.display = 'flex';
+  renderLeaderboard();
+  setTimeout(() => nameInput.focus(), 100);
 }
 
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// 점수 등록
+document.getElementById('submitScore').addEventListener('click', async () => {
+  const nameInput = document.getElementById('nameInput');
+  const submitBtn = document.getElementById('submitScore');
+  const name = nameInput.value.trim() || '익명';
+  lastSubmittedName = name;
+  submitBtn.disabled = true;
+  submitBtn.textContent = '저장 중...';
+  nameInput.disabled = true;
+  try {
+    await saveScore(name, score, killCount, level);
+    submitBtn.textContent = '✅ 등록 완료';
+    renderLeaderboard(name);
+  } catch(e) {
+    submitBtn.textContent = '❌ 오류';
+    console.error(e);
+  }
+});
+// 엔터키로도 등록
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('submitScore').click();
+});
 
 // ── 시작 화면 캔버스 ──────────────────────────────────────────────────
 function renderStart() {
