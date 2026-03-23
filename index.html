@@ -575,16 +575,16 @@ async function saveScore(name, sc, kills, lv) {
     date: new Date().toLocaleDateString('ko-KR'),
     ts: Date.now()
   };
+  // 항상 localStorage에도 저장 (폴백 캐시)
+  const localScores = loadLocalScores();
+  localScores.push(entry);
+  localScores.sort((a, b) => b.score - a.score);
+  localScores.splice(50);
+  localStorage.setItem(LS_KEY, JSON.stringify(localScores));
+
   if (fbDb) {
-    // Firebase에 저장 — 상위 100개 자동 유지
+    // Firebase에도 저장
     await fbDb.ref('scores').push(entry);
-  } else {
-    // 폴백: localStorage
-    const scores = loadLocalScores();
-    scores.push(entry);
-    scores.sort((a, b) => b.score - a.score);
-    scores.splice(10);
-    localStorage.setItem(LS_KEY, JSON.stringify(scores));
   }
 }
 
@@ -601,14 +601,18 @@ async function renderLeaderboard(highlightName = '') {
   if (fbDb) {
     try {
       const snap = await fbDb.ref('scores')
-        .orderByChild('score').limitToLast(10).once('value');
+        .orderByChild('score').limitToLast(50).once('value');
       snap.forEach(child => scores.push(child.val()));
       scores.sort((a, b) => b.score - a.score);
+      scores = scores.slice(0, 10);
+      // Firebase 성공 시 localStorage도 갱신
+      localStorage.setItem(LS_KEY, JSON.stringify(scores));
     } catch(e) {
-      scores = loadLocalScores(); // Firebase 오류 시 로컬 폴백
+      console.warn('Firebase 읽기 실패, 로컬 폴백:', e);
+      scores = loadLocalScores().slice(0, 10);
     }
   } else {
-    scores = loadLocalScores();
+    scores = loadLocalScores().slice(0, 10);
   }
 
   if (scores.length === 0) {
@@ -798,12 +802,16 @@ document.getElementById('submitScore').addEventListener('click', async () => {
   submitBtn.textContent = '저장 중...';
   nameInput.disabled = true;
   try {
+    // 먼저 로컬에 즉시 저장 & 리더보드 업데이트 (빠른 피드백)
     await saveScore(name, score, killCount, level);
     submitBtn.textContent = '✅ 등록 완료';
+    // 즉시 리더보드 렌더링 (로컬 데이터 포함)
     await renderLeaderboard(name);
   } catch(e) {
-    submitBtn.textContent = '❌ 오류';
-    console.error(e);
+    submitBtn.textContent = '❌ 저장오류';
+    console.error('점수 저장 실패:', e);
+    // 오류가 나도 로컬 데이터로 리더보드 표시
+    renderLeaderboard(name);
   }
 });
 // 엔터키로도 등록
