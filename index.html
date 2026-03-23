@@ -800,7 +800,7 @@ document.getElementById('submitScore').addEventListener('click', async () => {
   try {
     await saveScore(name, score, killCount, level);
     submitBtn.textContent = '✅ 등록 완료';
-    renderLeaderboard(name);
+    await renderLeaderboard(name);
   } catch(e) {
     submitBtn.textContent = '❌ 오류';
     console.error(e);
